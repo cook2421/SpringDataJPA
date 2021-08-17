@@ -32,6 +32,8 @@ class MemberRepositoryTest {
     MemberRepository memberRepository;
     @Autowired
     TeamRepository teamRepository;
+    @PersistenceContext
+    EntityManager em;
 
     @Test
     public void testMember() {
@@ -216,5 +218,68 @@ class MemberRepositoryTest {
 
         // then
         assertThat(resultCount).isEqualTo(3);
+    }
+
+    @Test
+    public void findMemberLazy() {
+        // given
+        Team teamA = new Team("teamA");
+        Team teamB = new Team("teamB");
+        teamRepository.save(teamA);
+        teamRepository.save(teamB);
+
+        Member member1 = new Member("member1", 10, teamA);
+        Member member2 = new Member("member2", 10, teamB);
+        memberRepository.save(member1);
+        memberRepository.save(member2);
+
+        em.flush();
+        em.clear();
+
+        // when
+//        List<Member> members = memberRepository.findAll();                // Lazy 로딩 때문에 N+1 문제 발생
+//        List<Member> members = memberRepository.findMemberFetchJoin();    // 페치 조인을 JPQL로 다 작성해야 함
+        List<Member> members = memberRepository.findAll();                  // @EntityGraph 애노테이션 추가
+
+        for (Member member : members) {
+            System.out.println("member = " + member.getUsername());
+            System.out.println("member.team = " + member.getTeam().getName());
+        }
+    }
+
+    @Test
+    public void queryHint() {
+        // given
+        Member member1 = memberRepository.save(new Member("member1", 10));
+        em.flush();
+        em.clear();
+
+        // when
+        Member findMember = memberRepository.findReadOnlyByUsername("member1");
+        findMember.setUsername("member2");
+
+        em.flush();
+        /*
+            findMember를 가져오는 순간 member1과 findMember 두 스냅샷을 관리하기 시작함.
+            더티 체킹을 통해서 변경사항을 감지하여 업데이트하려면 원본과 변경본을 둘 다 알아야하기 때문.
+            따라서 member1, findMember, 더티 체킹까지 리소스를 잡아먹음.
+            만약 정말 조회만 하는 용도라면 hibernate 구현체에서 최적화 기능(QueryHints)을 제공함(JPA 표준 스펙X)
+        */
+    }
+
+    @Test
+    public void lock() {
+        // given
+        Member member1 = memberRepository.save(new Member("member1", 10));
+        em.flush();
+        em.clear();
+
+        // when
+        List<Member> result = memberRepository.findLockByUsername("member1");
+    }
+
+    @Test
+    public void callCustom() {
+        List<Member> result = memberRepository.findMemberCustom();
     }
 }
